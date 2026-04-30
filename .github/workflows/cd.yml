@@ -1,0 +1,108 @@
+name: CD Metradingplat Gestion Escaneres
+
+on:
+  workflow_run:
+    workflows: ["CI Metradingplat Gestion Escaneres"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Create Docker Network
+        run: |
+          docker network create metradingplat-network || echo "Network already exists"
+
+      - name: Run Postgres Container
+        run: |
+          # Check if container exists, if so start it, if not run it
+          if [ -z "$(docker ps -a -q -f name=postgres-scanners)" ]; then
+            echo "Creating and starting postgres-scanners container..."
+            docker run -d \
+              --name "postgres-scanners" \
+              --network "metradingplat-network" \
+              --restart "always" \
+              --memory "256m" \
+              --memory-swap "256m" \
+              -e POSTGRES_DB="bd_scanners" \
+              -e POSTGRES_USER="user_scanners" \
+              -e POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+              -p 127.0.0.1:5433:5432 \
+              -v postgres_scanners_data:/var/lib/postgresql/data \
+              postgres:15-alpine
+          else
+            echo "postgres-scanners container exists, ensuring it is started..."
+            docker start postgres-scanners
+          fi
+
+      - name: Infrastructure Diagnosis & Cleanup
+        run: |
+          echo "--- DISK SPACE CHECK ---"
+          df -h
+          echo "--- CLEANING SHARED BASE IMAGES ---"
+          docker image rm -f eclipse-temurin:21-jdk eclipse-temurin:21-jre-alpine || true
+          echo "--- CLEANING SERVICE METADATA ---"
+          docker rm -f scanner-management-service || true
+          docker image rm -f virtud142/metradingplat_scanner_management_service:latest || true
+
+      - name: Pull Application Image (with Retry Logic)
+        run: |
+          echo "Attempting to pull image with auto-retry for stability..."
+          for i in 1 2 3; do
+            docker pull virtud142/metradingplat_scanner_management_service:latest && exit 0 || \
+            (echo "Attempt $i failed, waiting 10s..." && sleep 10)
+          done
+          echo "All pull attempts failed. Docker daemon might need a manual restart."
+          exit 1
+
+      - name: Delete Old Application Container
+        run: docker rm -f scanner-management-service || true
+
+      - name: Run Application Container
+        run: |
+          docker run -d \
+            -p 127.0.0.1:8081:8081 \
+            --name "scanner-management-service" \
+            --network "metradingplat-network" \
+            --restart "unless-stopped" \
+            --memory "384m" \
+            --memory-swap "384m" \
+            --label project="metradingplat" \
+            --label service="scanner-management-service" \
+            -e SPRING_PROFILES_ACTIVE="prod" \
+            -e DB_HOST="postgres-scanners" \
+            -e DB_PORT="5432" \
+            -e DB_NAME="bd_scanners" \
+            -e POSTGRES_USER="user_scanners" \
+            -e POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            -e SSL_ENABLED="false" \
+            -e SSL_MODE="disable" \
+            -e EUREKA_HOST="directory" \
+            virtud142/metradingplat_scanner_management_service:latest
+
+      - name: Clean Old Images of This Service
+        run: |
+          echo "Cleaning old images for scanner-management-service service..."
+          CURRENT_IMAGE=$(docker inspect scanner-management-service --format='{{.Image}}' 2>/dev/null || echo "")
+          if [ -n "$CURRENT_IMAGE" ]; then
+            docker images --filter "label=service=scanner-management-service" --format "{{.ID}}" | while read img; do
+              if [ "$img" != "${CURRENT_IMAGE:7:12}" ]; then
+                echo "Removing old image: $img"
+                docker rmi -f $img 2>/dev/null || true
+              fi
+            done
+          fi
+          docker images virtud142/metradingplat_scanner_management_service --format "{{.ID}} {{.Tag}}" | grep -v "latest" | awk '{print $1}' | xargs -r docker rmi -f 2>/dev/null || true
+
+      - name: Clean Stopped Containers of This Service
+        run: |
+          echo "Cleaning stopped containers for scanner-management-service service..."
+          docker ps -a --filter "label=service=scanner-management-service" --filter "status=exited" -q | xargs -r docker rm 2>/dev/null || true
+
+      - name: Final Status Check
+        run: |
+          sleep 5
+          docker ps | grep scanner-management-service
