@@ -1,10 +1,12 @@
-package com.metradingplat.scanner_management;
+package com.metradingplat.auth;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 
 @SpringBootTest
-class ScannerManagementServiceApplicationTests {
+@ActiveProfiles("test")
+class AuthServiceApplicationTests {
 
 	@Test
 	void contextLoads() {
