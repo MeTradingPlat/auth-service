@@ -63,7 +63,7 @@ jobs:
       - name: Run Application Container
         run: |
           docker run -d \
-            -p 127.0.0.1:8085:8085 \
+            -p 127.0.0.1:8086:8086 \
             --name "auth-service" \
             --network "metradingplat-network" \
             --restart "unless-stopped" \
