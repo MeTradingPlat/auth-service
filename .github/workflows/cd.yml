@@ -18,24 +18,20 @@ jobs:
 
       - name: Run Postgres Container
         run: |
-          if [ -z "$(docker ps -a -q -f name=postgres-auth)" ]; then
-            echo "Creating and starting postgres-auth container..."
-            docker run -d \
-              --name "postgres-auth" \
-              --network "metradingplat-network" \
-              --restart "always" \
-              --memory "256m" \
-              --memory-swap "256m" \
-              -e POSTGRES_DB="bd_auth" \
-              -e POSTGRES_USER="user_auth" \
-              -e POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
-              -p 127.0.0.1:5437:5432 \
-              -v postgres_auth_data:/var/lib/postgresql/data \
-              postgres:15-alpine
-          else
-            echo "postgres-auth container exists, ensuring it is started..."
-            docker start postgres-auth
-          fi
+          echo "Recreating postgres-auth container to ensure latest configuration..."
+          docker rm -f postgres-auth || true
+          docker run -d \
+            --name "postgres-auth" \
+            --network "metradingplat-network" \
+            --restart "always" \
+            --memory "256m" \
+            --memory-swap "256m" \
+            -e POSTGRES_DB="bd_auth" \
+            -e POSTGRES_USER="user_auth" \
+            -e POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
+            -p 127.0.0.1:5437:5432 \
+            -v postgres_auth_data:/var/lib/postgresql/data \
+            postgres:15-alpine
 
       - name: Infrastructure Diagnosis & Cleanup
         run: |
