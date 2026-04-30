@@ -1,343 +1,102 @@
-# Scanner Management Service
+# Auth Service
 
-Microservicio de gestion de escaneadores de mercado para la plataforma **MeTradingPlat**. Permite crear, configurar y gestionar scanners con filtros tecnicos y fundamentales que se ejecutan sobre simbolos de distintos mercados.
+Microservicio de autenticación y autorización para la plataforma **MeTradingPlat**. Se encarga de la gestión de usuarios, roles (RBAC) y la generación de tokens JWT para asegurar la comunicación entre microservicios.
 
 ## Tabla de Contenido
 
 - [Arquitectura](#arquitectura)
-- [Tecnologias](#tecnologias)
+- [Tecnologías](#tecnologias)
 - [Estructura del Proyecto](#estructura-del-proyecto)
 - [API Endpoints](#api-endpoints)
-- [Sistema de Filtros](#sistema-de-filtros)
-- [Maquina de Estados](#maquina-de-estados)
+- [Seguridad](#seguridad)
 - [Base de Datos](#base-de-datos)
-- [Configuracion](#configuracion)
-- [Ejecucion](#ejecucion)
+- [Configuración](#configuracion)
+- [Ejecución](#ejecucion)
 
 ## Arquitectura
 
-El servicio implementa **Arquitectura Hexagonal** (Puertos y Adaptadores) con patrones State y Strategy.
+El servicio sigue una arquitectura limpia orientada a dominio, integrándose con Spring Security para el manejo de la seguridad.
 
-```mermaid
-graph TB
-    subgraph "Capa Infraestructura - Input"
-        RC_E["REST Controller<br/>Escaner"]
-        RC_EST["REST Controller<br/>Estado Escaner"]
-        RC_F["REST Controller<br/>Filtro"]
-        RC_M["REST Controller<br/>Mercado"]
-        MP["Mappers DTO<br/>MapStruct"]
-        GHF["Gateway Header<br/>Filter"]
-    end
+## Tecnologías
 
-    subgraph "Capa Aplicacion - Input Ports"
-        IP_E["GestionarEscanerCUIntPort"]
-        IP_EST["GestionarEstadoEscanerCUIntPort"]
-        IP_F["GestionarFiltroCUIntPort"]
-        IP_M["GestionarMercadoCUIntPort"]
-    end
-
-    subgraph "Capa Dominio - Use Cases"
-        UC_E["GestionarEscanerCUAdapter"]
-        UC_EST["GestionarEstadoEscanerCUAdapter"]
-        UC_F["GestionarFiltroCUAdapter"]
-        UC_M["GestionarMercadoCUAdapter"]
-        SM["GestorEstadoEscaner<br/>State Machine"]
-        FF["GestorFiltroFactory<br/>Strategy Pattern"]
-    end
-
-    subgraph "Capa Aplicacion - Output Ports"
-        OP_E["GestionarEscanerGatewayIntPort"]
-        OP_EST["GestionarEstadoEscanerGatewayIntPort"]
-        OP_F["GestionarFiltroGatewayIntPort"]
-        OP_SP["FuenteMensajesSignalProcessingIntPort"]
-        OP_ERR["FormateadorResultadosIntPort"]
-    end
-
-    subgraph "Capa Infraestructura - Output"
-        GW_E["Escaner Gateway<br/>Adapter JPA"]
-        GW_EST["Estado Gateway<br/>Adapter JPA"]
-        GW_F["Filtro Gateway<br/>Adapter JPA"]
-        SP["Comunicacion<br/>Signal Processing"]
-        ERR["Formateador<br/>Excepciones"]
-        I18N["FuenteMensajes<br/>i18n"]
-    end
-
-    subgraph "Servicios Externos"
-        DB[(PostgreSQL<br/>bd_scanners)]
-        SPS["Signal Processing<br/>Service"]
-    end
-
-    RC_E & RC_EST & RC_F & RC_M --> MP --> IP_E & IP_EST & IP_F & IP_M
-
-    IP_E -.->|implementa| UC_E
-    IP_EST -.->|implementa| UC_EST
-    IP_F -.->|implementa| UC_F
-    IP_M -.->|implementa| UC_M
-
-    UC_EST --> SM
-    UC_F --> FF
-
-    UC_E --> OP_E
-    UC_EST --> OP_EST & OP_SP
-    UC_F --> OP_F
-
-    OP_E -.->|implementa| GW_E
-    OP_EST -.->|implementa| GW_EST
-    OP_F -.->|implementa| GW_F
-    OP_SP -.->|implementa| SP
-
-    GW_E & GW_EST & GW_F --> DB
-    SP --> SPS
-```
-
-## Tecnologias
-
-| Tecnologia | Version | Proposito |
+| Tecnología | Versión | Propósito |
 |---|---|---|
 | Java | 21 | Lenguaje principal (Virtual Threads) |
-| Spring Boot | 3.5.9 | Framework |
+| Spring Boot | 3.5.14 | Framework |
+| Spring Security | - | Autenticación y Autorización |
 | Spring Data JPA | - | Persistencia |
 | PostgreSQL | 15 | Base de datos |
-| Spring Cloud | 2025.0.0 | Eureka Client |
-| MapStruct | 1.5.5 | Mapeo DTO <-> Dominio <-> Entidad |
-| Lombok | - | Reduccion de boilerplate |
-| Docker | Multi-stage | Contenedorizacion |
+| JWT (JJWT) | 0.11.5 | Generación de tokens |
+| Docker | Multi-stage | Contenedorización |
 
 ## Estructura del Proyecto
 
 ```
-src/main/java/com/metradingplat/scanner_management/
+src/main/java/com/metradingplat/auth/
 ├── application/
-│   ├── input/                          # Puertos de entrada (interfaces)
-│   │   ├── GestionarEscanerCUIntPort.java
-│   │   ├── GestionarEstadoEscanerCUIntPort.java
-│   │   ├── GestionarFiltroCUIntPort.java
-│   │   ├── GestionarMercadoCUIntPort.java
-│   │   └── FilterStrategyPort.java
-│   └── output/                         # Puertos de salida (interfaces)
-│       ├── GestionarEscanerGatewayIntPort.java
-│       ├── GestionarEstadoEscanerGatewayIntPort.java
-│       ├── GestionarFiltroGatewayIntPort.java
-│       ├── GestorEstrategiaFiltroIntPort.java
-│       ├── FuenteMensajesIntPort.java
-│       ├── FuenteMensajesSignalProcessingIntPort.java
-│       └── FormateadorResultadosIntPort.java
+│   ├── input/                          # Casos de uso
+│   └── output/                         # Adaptadores de salida
 ├── domain/
-│   ├── enums/
-│   │   ├── EnumEstadoEscaner.java      # ARCHIVADO, INICIADO, DETENIDO, DESARCHIVADO
-│   │   ├── EnumFiltro.java             # 40+ tipos de filtros
-│   │   ├── EnumCategoriaFiltro.java    # VOLUMEN, PRECIO, VOLATILIDAD, MOMENTUM, TIEMPO, FUNDAMENTALES
-│   │   ├── EnumMercado.java            # NYSE, NASDAQ, AMEX, ETF, OTC
-│   │   ├── EnumParametro.java
-│   │   ├── EnumTipoEjecucion.java
-│   │   ├── EnumTipoValor.java          # FLOAT, INTEGER, STRING, CONDICIONAL
-│   │   └── valores/                    # Enums especializados (condicionales, patrones, etc.)
-│   ├── models/                         # Modelos de dominio
-│   │   ├── Escaner.java
-│   │   ├── EstadoEscaner.java
-│   │   ├── Filtro.java
-│   │   ├── Parametro.java
-│   │   ├── Valor.java                  # Polimorfismo: ValorFloat, ValorInteger, ValorString, ValorCondicional
-│   │   ├── Mercado.java
-│   │   └── CategoriaFiltro.java
-│   ├── states/                         # Patron State
-│   │   ├── IEstadoEscaner.java
-│   │   ├── GestorEstadoEscaner.java
-│   │   ├── EstadoEscanerIniciado.java
-│   │   ├── EstadoEscanerDetenido.java
-│   │   └── EstadoEscanerArchivado.java
-│   └── usecases/                       # Adaptadores de casos de uso
-│       ├── GestionarEscanerCUAdapter.java
-│       ├── GestionarEstadoEscanerCUAdapter.java
-│       ├── GestionarFiltroCUAdapter.java
-│       └── GestionarMercadoCUAdapter.java
-└── infrastructure/
-    ├── business/                       # Estrategias de filtros (41 implementaciones)
-    │   ├── factory/
-    │   │   ├── IFiltroFactory.java
-    │   │   └── GestorFiltroFactory.java
-    │   ├── strategies/
-    │   │   ├── volumen/
-    │   │   ├── precio/
-    │   │   ├── volatilidad/
-    │   │   ├── momentum/
-    │   │   ├── tiempo/
-    │   │   └── fundamentales/
-    │   └── validation/
-    ├── configuration/
-    │   ├── BeanConfigurations.java
-    │   └── JpaConfiguration.java
-    ├── input/
-    │   ├── controllerGestionarEscaner/
-    │   ├── controllerGestionarEstadoEscaner/
-    │   ├── controllerGestionarFiltro/
-    │   ├── controllerGestionarMercado/
-    │   └── filter/                     # GatewayHeaderFilter
-    └── output/
-        ├── exceptionsController/       # Manejo global de errores
-        ├── persistence/
-        │   ├── entity/                 # Entidades JPA
-        │   ├── mapper/                 # Mappers Entidad <-> Dominio
-        │   └── repository/             # Spring Data repositories
-        ├── external/                   # Comunicacion con Signal Processing
-        └── i18n/                       # Internacionalizacion
+│   ├── models/                         # Usuario, Rol
+│   └── repository/                     # Interfaces de persistencia
+├── infrastructure/
+│   ├── configuration/                  # SecurityConfig, BeanConfig
+│   ├── input/
+│   │   └── rest/                       # AuthController
+│   └── output/
+│       └── persistence/                # Implementación JPA
+└── security/                           # JwtUtil, UserDetailsServiceImpl
 ```
 
 ## API Endpoints
 
-Base path: `/api/escaner`
+Base path: `/api/auth`
 
-### Escaner (CRUD)
-
-| Metodo | Path | Descripcion |
+| Método | Path | Descripción |
 |---|---|---|
-| `POST` | `/api/escaner` | Crear escaner |
-| `GET` | `/api/escaner` | Listar escaneres activos (no archivados) |
-| `GET` | `/api/escaner/{id}` | Obtener escaner por ID |
-| `GET` | `/api/escaner/archivados` | Listar escaneres archivados |
-| `GET` | `/api/escaner/iniciados` | Listar escaneres iniciados |
-| `PUT` | `/api/escaner/{id}` | Actualizar escaner |
-| `DELETE` | `/api/escaner/{id}` | Eliminar escaner |
+| `POST` | `/api/auth/login` | Iniciar sesión y obtener JWT |
+| `POST` | `/api/auth/register` | Registrar un nuevo usuario |
 
-### Estado del Escaner
+## Seguridad
 
-| Metodo | Path | Descripcion |
-|---|---|---|
-| `POST` | `/api/escaner/estado/{id}/iniciar` | Iniciar escaner |
-| `POST` | `/api/escaner/estado/{id}/detener` | Detener escaner |
-| `POST` | `/api/escaner/estado/{id}/archivar` | Archivar escaner |
-| `POST` | `/api/escaner/estado/{id}/desarchivar` | Desarchivar escaner |
+### Roles (RBAC)
+- **ROLE_EDITOR**: Permiso total (lectura y escritura).
+- **ROLE_VIEWER**: Permiso de solo lectura (GET).
 
-### Filtros
-
-| Metodo | Path | Descripcion |
-|---|---|---|
-| `GET` | `/api/escaner/filtro/categorias` | Obtener categorias de filtros |
-| `GET` | `/api/escaner/filtro?categoria={cat}` | Obtener filtros por categoria |
-| `GET` | `/api/escaner/filtro/defecto?filtro={filtro}` | Obtener filtro con valores por defecto |
-| `GET` | `/api/escaner/filtro/escaner/{idEscaner}` | Obtener filtros guardados de un escaner |
-| `POST` | `/api/escaner/filtro/escaner/{idEscaner}` | Guardar filtros de un escaner |
-
-### Mercados
-
-| Metodo | Path | Descripcion |
-|---|---|---|
-| `GET` | `/api/escaner/mercado` | Listar mercados disponibles |
-
-## Sistema de Filtros
-
-El servicio implementa un **Strategy Pattern** con 41 estrategias de filtros organizadas en 6 categorias:
-
-| Categoria | Filtros |
-|---|---|
-| **Volumen** | Volume, Average Volume, Volumen Post/Pre, Relative Volume, Relative Volume Same Time, Volume Spike |
-| **Precio y Movimiento** | Change, % Change, Precio, Gap From Close, Position In Range, % Range, Range Dollars, Crossing Above/Below, Halt |
-| **Volatilidad** | ATR, ATRP, Relative Range |
-| **Momentum** | RSI, Distance From VWAP/EMA/MA, Back To EMA Alert, Through EMA/VWAP Alert, EMA/VWAP Support Resistance |
-| **Tiempo y Patrones** | Bearish/Bullish Engulfing, Consecutive Candles, First Candle, High/Low of Day, New Candle High/Low, % Pullback, Break Over Recent Highs/Lows, ORB/ORBreakout, Pivots, Minutes In Market |
-| **Fundamentales** | Float, Shares Outstanding, Market Cap, Short Interest, Short Ratio, Days Until Earnings, Noticias |
-
-Cada filtro tiene parametros tipados (`Float`, `Integer`, `String`, `Condicional`) con valores por defecto y validacion automatica.
-
-## Maquina de Estados
-
-```mermaid
-stateDiagram-v2
-    [*] --> DETENIDO : Crear escaner
-    DETENIDO --> INICIADO : iniciar
-    INICIADO --> DETENIDO : detener
-    DETENIDO --> ARCHIVADO : archivar
-    INICIADO --> ARCHIVADO : archivar
-    ARCHIVADO --> DETENIDO : desarchivar
-```
-
-- Al **iniciar** un escaner se notifica al Signal Processing Service via REST
-- Al **detener** se envia notificacion de detencion
-- Se requieren **filtros configurados** para poder iniciar un escaner
-- Bloqueo optimista con campo `version` para concurrencia
+### JWT
+- Los tokens tienen una validez de 24 horas por defecto.
+- La firma se realiza mediante una clave secreta configurada por variable de entorno.
 
 ## Base de Datos
 
-```mermaid
-erDiagram
-    ESCANER ||--|| ESTADO_ESCANER : tiene
-    ESCANER ||--o{ FILTRO : contiene
-    ESCANER }o--|| TIPO_EJECUCION : usa
-    ESCANER }o--o{ MERCADO : escanea
-    FILTRO ||--o{ PARAMETRO : tiene
-    PARAMETRO ||--|| VALOR : contiene
-
-    ESCANER {
-        Long idEscaner PK
-        String nombre UK
-        String descripcion
-        LocalTime horaInicio
-        LocalTime horaFin
-    }
-    ESTADO_ESCANER {
-        Long idEscaner PK_FK
-        Enum estado
-        Long version
-    }
-    FILTRO {
-        Long idFiltro PK
-        Enum enumFiltro
-        Long idEscaner FK
-    }
-    PARAMETRO {
-        Long idParametro PK
-        Enum enumParametro
-        Long idFiltro FK
-    }
-    VALOR {
-        Long idValor PK
-        String tipo
-    }
-```
-
 - **Motor**: PostgreSQL 15
-- **Base de datos**: `bd_scanners`
-- **DDL**: `hibernate.ddl-auto: update`
-- **Datos iniciales**: `import.sql` (mercados y tipos de ejecucion)
+- **Base de datos**: `bd_auth`
+- **Datos iniciales**: `import.sql` (crea usuarios `admin` y `user` con contraseñas por defecto).
 
-## Configuracion
+## Configuración
 
 ### Variables de Entorno
 
-| Variable | Descripcion | Default |
+| Variable | Descripción | Default |
 |---|---|---|
-| `DB_HOST` | Host de PostgreSQL | `postgres-scanners` |
-| `DB_PORT` | Puerto de PostgreSQL | `5432` |
-| `DB_NAME` | Nombre de la BD | `bd_scanners` |
-| `POSTGRES_USER` | Usuario PostgreSQL | - |
-| `POSTGRES_PASSWORD` | Password PostgreSQL | - |
+| `DB_HOST` | Host de PostgreSQL | `postgres-auth` |
+| `DB_NAME` | Nombre de la BD | `bd_auth` |
+| `JWT_SECRET` | Clave secreta para JWT | (Obligatorio) |
 | `EUREKA_HOST` | Host de Eureka | `directory` |
 
-### Perfiles de Spring
-
-- **dev**: PostgreSQL en localhost:5432, Eureka en localhost:8761
-- **prod**: Configuracion via variables de entorno del docker-compose
-
-### Internacionalizacion
-
-Soporta mensajes en espanol (`es`) e ingles (`en`) para mensajes de validacion, etiquetas de filtros y errores.
-
-## Ejecucion
+## Ejecución
 
 ### Con Docker Compose
 
 ```bash
 # Desde la raiz de metradingplat/
-docker compose up -d scanner-management-service
+docker compose up -d auth-service
 ```
-
-Disponible en `http://localhost:8081` (directo) o `http://localhost:8080/api/escaner` (via Gateway).
 
 ### Desarrollo Local
 
 ```bash
-cd scanner-management-service
-
-# Requiere Java 21, Maven, PostgreSQL con BD bd_scanners
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
+cd auth-service
+# Requiere Java 21, Maven, PostgreSQL
+mvn spring-boot:run
 ```

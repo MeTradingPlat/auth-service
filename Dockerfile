@@ -10,10 +10,10 @@ RUN mvn clean package -DskipTests
 # Stage 2: Production
 FROM eclipse-temurin:21-jre-alpine
 LABEL project="metradingplat"
-LABEL service="scanner-management-service"
+LABEL service="auth-service"
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8081
+EXPOSE 8085
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-Xms64m", "-Xmx256m", "-XX:+UseG1GC", "-XX:ParallelGCThreads=1", "-XX:ConcGCThreads=1", "-jar", "app.jar"]

@@ -1,4 +1,4 @@
-name: CI Metradingplat Gestion Escaneres
+name: CI Metradingplat Auth Service
 
 on:
   push:
@@ -29,5 +29,5 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          docker build -t virtud142/metradingplat_scanner_management_service:latest .
-          docker push virtud142/metradingplat_scanner_management_service:latest
+          docker build -t virtud142/metradingplat_auth_service:latest .
+          docker push virtud142/metradingplat_auth_service:latest
