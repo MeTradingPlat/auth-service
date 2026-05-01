@@ -29,7 +29,6 @@ jobs:
             -e POSTGRES_DB="bd_auth" \
             -e POSTGRES_USER="user_auth" \
             -e POSTGRES_PASSWORD="${{ secrets.POSTGRES_PASSWORD }}" \
-            -p 127.0.0.1:5437:5432 \
             -v postgres_auth_data:/var/lib/postgresql/data \
             postgres:15-alpine
 
@@ -59,7 +58,6 @@ jobs:
       - name: Run Application Container
         run: |
           docker run -d \
-            -p 127.0.0.1:8088:8088 \
             --name "auth-service" \
             --network "metradingplat-network" \
             --restart "unless-stopped" \
