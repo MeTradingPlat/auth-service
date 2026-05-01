@@ -83,7 +83,7 @@ jobs:
           VIEWER_PASSWORD: ${{ secrets.VIEWER_PASSWORD }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
-          python3 -c "import bcrypt" 2>/dev/null || sudo apt-get install -y python3-bcrypt
+          python3 -m pip install --user bcrypt --quiet || echo "Attempting to continue with existing packages..."
 
           echo "Waiting for auth-service to initialize the database schema..."
           for i in $(seq 1 30); do
