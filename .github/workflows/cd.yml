@@ -100,14 +100,34 @@ jobs:
           docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" postgres-auth \
             psql -U user_auth -d bd_auth << ENDSQL
           CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          
+          -- 1. Clean up duplicated roles (keep only one per name)
+          DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles a WHERE EXISTS (SELECT 1 FROM roles b WHERE b.name = a.name AND b.id < a.id));
+          DELETE FROM roles a WHERE EXISTS (SELECT 1 FROM roles b WHERE b.name = a.name AND b.id < a.id);
+          
+          -- 2. Upsert admin user
+          INSERT INTO users (username, password) 
+          VALUES ('admin', crypt('${ADMIN_PASSWORD}', gen_salt('bf', 10)))
+          ON CONFLICT (username) DO UPDATE SET password = EXCLUDED.password;
+          
+          -- 3. Upsert viewer user
+          INSERT INTO users (username, password) 
+          VALUES ('viewer', crypt('${VIEWER_PASSWORD}', gen_salt('bf', 10)))
+          ON CONFLICT (username) DO UPDATE SET password = EXCLUDED.password;
+          
+          -- 4. Sync roles (ensure admin has ROLE_EDITOR and viewer has ROLE_VIEWER)
+          -- Remove existing associations first to avoid duplicates
           DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE username IN ('admin', 'viewer'));
-          DELETE FROM users WHERE username IN ('admin', 'viewer');
-          INSERT INTO users(username, password) VALUES('admin', crypt('${ADMIN_PASSWORD}', gen_salt('bf', 10)));
-          INSERT INTO users(username, password) VALUES('viewer', crypt('${VIEWER_PASSWORD}', gen_salt('bf', 10)));
-          INSERT INTO user_roles(user_id, role_id) SELECT u.id, r.id FROM users u, roles r WHERE u.username = 'admin' AND r.name = 'ROLE_EDITOR';
-          INSERT INTO user_roles(user_id, role_id) SELECT u.id, r.id FROM users u, roles r WHERE u.username = 'viewer' AND r.name = 'ROLE_VIEWER';
+          
+          INSERT INTO user_roles (user_id, role_id) 
+          SELECT u.id, r.id FROM users u, roles r 
+          WHERE u.username = 'admin' AND r.name = 'ROLE_EDITOR';
+          
+          INSERT INTO user_roles (user_id, role_id) 
+          SELECT u.id, r.id FROM users u, roles r 
+          WHERE u.username = 'viewer' AND r.name = 'ROLE_VIEWER';
           ENDSQL
-          echo "Users admin and viewer created successfully."
+          echo "Users admin and viewer upserted successfully without duplication."
 
       - name: Clean Old Images of This Service
         run: |
