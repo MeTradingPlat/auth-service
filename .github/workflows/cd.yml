@@ -77,6 +77,40 @@ jobs:
             -e EUREKA_HOST="directory" \
             virtud142/metradingplat_auth_service:latest
 
+      - name: Upsert Fixed Users (admin, viewer)
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          VIEWER_PASSWORD: ${{ secrets.VIEWER_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          python3 -c "import bcrypt" 2>/dev/null || sudo apt-get install -y python3-bcrypt
+
+          echo "Waiting for auth-service to initialize the database schema..."
+          for i in $(seq 1 30); do
+            ROLE_COUNT=$(docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" postgres-auth \
+              psql -U user_auth -d bd_auth -t -c "SELECT COUNT(*) FROM roles;" 2>/dev/null | tr -d ' ')
+            if [ "${ROLE_COUNT:-0}" -ge "2" ] 2>/dev/null; then
+              echo "Schema ready (roles: $ROLE_COUNT)"
+              break
+            fi
+            echo "Attempt $i/30 - waiting 3s..."
+            sleep 3
+          done
+
+          ADMIN_HASH=$(python3 -c "import bcrypt, os; print(bcrypt.hashpw(os.environ['ADMIN_PASSWORD'].encode(), bcrypt.gensalt(10)).decode())")
+          VIEWER_HASH=$(python3 -c "import bcrypt, os; print(bcrypt.hashpw(os.environ['VIEWER_PASSWORD'].encode(), bcrypt.gensalt(10)).decode())")
+
+          docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD" postgres-auth \
+            psql -U user_auth -d bd_auth << ENDSQL
+          DELETE FROM user_roles WHERE user_id IN (SELECT id FROM users WHERE username IN ('admin', 'viewer'));
+          DELETE FROM users WHERE username IN ('admin', 'viewer');
+          INSERT INTO users(username, password) VALUES('admin', '${ADMIN_HASH}');
+          INSERT INTO users(username, password) VALUES('viewer', '${VIEWER_HASH}');
+          INSERT INTO user_roles(user_id, role_id) SELECT u.id, r.id FROM users u, roles r WHERE u.username = 'admin' AND r.name = 'ROLE_EDITOR';
+          INSERT INTO user_roles(user_id, role_id) SELECT u.id, r.id FROM users u, roles r WHERE u.username = 'viewer' AND r.name = 'ROLE_VIEWER';
+          ENDSQL
+          echo "Users admin and viewer created successfully."
+
       - name: Clean Old Images of This Service
         run: |
           echo "Cleaning old images for auth-service service..."

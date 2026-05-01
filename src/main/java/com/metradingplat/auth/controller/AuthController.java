@@ -1,14 +1,8 @@
 package com.metradingplat.auth.controller;
 
-import com.metradingplat.auth.domain.Role;
-import com.metradingplat.auth.domain.RoleName;
-import com.metradingplat.auth.domain.User;
 import com.metradingplat.auth.payload.request.LoginRequest;
-import com.metradingplat.auth.payload.request.SignupRequest;
 import com.metradingplat.auth.payload.response.JwtResponse;
 import com.metradingplat.auth.payload.response.MessageResponse;
-import com.metradingplat.auth.repository.RoleRepository;
-import com.metradingplat.auth.repository.UserRepository;
 import com.metradingplat.auth.security.JwtUtils;
 import com.metradingplat.auth.security.UserDetailsImpl;
 import jakarta.validation.Valid;
@@ -20,15 +14,12 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -36,15 +27,6 @@ import java.util.stream.Collectors;
 public class AuthController {
     @Autowired
     AuthenticationManager authenticationManager;
-
-    @Autowired
-    UserRepository userRepository;
-
-    @Autowired
-    RoleRepository roleRepository;
-
-    @Autowired
-    PasswordEncoder encoder;
 
     @Autowired
     JwtUtils jwtUtils;
@@ -71,47 +53,5 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new MessageResponse("Credenciales inválidas"));
         }
-    }
-
-    @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@Valid @RequestBody SignupRequest signUpRequest) {
-        if (userRepository.existsByUsername(signUpRequest.getUsername())) {
-            return ResponseEntity
-                    .badRequest()
-                    .body(new MessageResponse("Error: Username is already taken!"));
-        }
-
-        // Create new user's account
-        User user = new User();
-        user.setUsername(signUpRequest.getUsername());
-        user.setPassword(encoder.encode(signUpRequest.getPassword()));
-
-        Set<String> strRoles = signUpRequest.getRoles();
-        Set<Role> roles = new HashSet<>();
-
-        if (strRoles == null || strRoles.isEmpty()) {
-            Role userRole = roleRepository.findByName(RoleName.ROLE_VIEWER)
-                    .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-            roles.add(userRole);
-        } else {
-            strRoles.forEach(role -> {
-                switch (role) {
-                    case "editor":
-                        Role editorRole = roleRepository.findByName(RoleName.ROLE_EDITOR)
-                                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                        roles.add(editorRole);
-                        break;
-                    default:
-                        Role viewerRole = roleRepository.findByName(RoleName.ROLE_VIEWER)
-                                .orElseThrow(() -> new RuntimeException("Error: Role is not found."));
-                        roles.add(viewerRole);
-                }
-            });
-        }
-
-        user.setRoles(roles);
-        userRepository.save(user);
-
-        return ResponseEntity.ok(new MessageResponse("User registered successfully!"));
     }
 }
