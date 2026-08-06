@@ -48,6 +48,7 @@ jobs:
             --name "postgres-auth" \
             --network "metradingplat-network" \
             --restart "always" \
+            --cpus "0.5" \
             --memory "256m" \
             --memory-swap "256m" \
             -e POSTGRES_DB="bd_auth" \
@@ -85,6 +86,7 @@ jobs:
             --name "auth-service" \
             --network "metradingplat-network" \
             --restart "unless-stopped" \
+            --cpus "0.5" \
             --memory "384m" \
             --memory-swap "384m" \
             --label project="metradingplat" \
