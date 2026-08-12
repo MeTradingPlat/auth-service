@@ -38,7 +38,7 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET}
-  expirationMs: 86400000 # 24 horas
+  expirationMs: 259200000 # 3 dias
 
 logging:
   level:
